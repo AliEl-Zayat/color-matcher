@@ -31,3 +31,15 @@ npm run preview
 ```
 
 Open on a phone (HTTPS or localhost) for camera access. Install from the browser for a home-screen app experience.
+
+## GitHub Pages
+
+The app is configured for project Pages at:
+
+`https://aliel-zayat.github.io/color-matcher/`
+
+1. In the repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**
+2. Merge/push to `main` (or run the **Deploy to GitHub Pages** workflow manually)
+3. Wait for the Actions run to finish, then open the URL above
+
+Vite `base` and the React Router basename are set to `/color-matcher/`.
