@@ -5,6 +5,7 @@ import {
   FolderKanban,
   History,
   Pipette,
+  SwatchBook,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -15,6 +16,7 @@ const tabs: Array<{
   end?: boolean
 }> = [
   { to: '/', label: 'Match', icon: Pipette, end: true },
+  { to: '/extract', label: 'Extract', icon: SwatchBook },
   { to: '/live', label: 'Live', icon: Camera },
   { to: '/palettes', label: 'Palettes', icon: Droplets },
   { to: '/history', label: 'History', icon: History },
@@ -47,8 +49,8 @@ export function AppShell() {
         <Outlet />
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/8 bg-[#0b0f14]/85 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl">
-        <div className="mx-auto grid max-w-lg grid-cols-5 gap-1 md:max-w-3xl lg:max-w-5xl">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/8 bg-[#0b0f14]/85 px-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl">
+        <div className="mx-auto grid max-w-lg grid-cols-6 gap-0.5 md:max-w-3xl lg:max-w-5xl">
           {tabs.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -56,7 +58,7 @@ export function AppShell() {
               end={end}
               className={({ isActive }) =>
                 cn(
-                  'flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold tracking-wide transition-colors',
+                  'flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 text-[9px] font-semibold tracking-wide transition-colors',
                   isActive
                     ? 'bg-white/10 text-[var(--color-accent)]'
                     : 'text-[var(--color-muted)] hover:text-white',

@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AppShell } from '@/components/layout/AppShell'
 import { MatchPage } from '@/pages/MatchPage'
+import { ExtractPage } from '@/pages/ExtractPage'
 import { LivePage } from '@/pages/LivePage'
 import { PalettesPage } from '@/pages/PalettesPage'
 import { HistoryPage } from '@/pages/HistoryPage'
@@ -26,6 +27,7 @@ export default function App() {
         <Routes>
           <Route element={<AppShell />}>
             <Route index element={<MatchPage />} />
+            <Route path="extract" element={<ExtractPage />} />
             <Route path="live" element={<LivePage />} />
             <Route path="palettes" element={<PalettesPage />} />
             <Route path="history" element={<HistoryPage />} />
