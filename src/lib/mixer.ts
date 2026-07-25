@@ -335,6 +335,54 @@ export function scaleRecipe(
   })
 }
 
+function gcd(a: number, b: number): number {
+  let x = Math.abs(a)
+  let y = Math.abs(b)
+  while (y !== 0) {
+    const t = y
+    y = x % y
+    x = t
+  }
+  return x || 1
+}
+
+/**
+ * Scale a recipe to the smallest practical drop-based sample.
+ * The least-used paint becomes 1 drop; others keep approximate ratios.
+ */
+export function toMinimumSampleRecipe(
+  components: MixComponent[],
+  dropMl: number,
+  densityGPerMl: number,
+): MixComponent[] {
+  if (components.length === 0) return []
+
+  const minPercent = Math.min(...components.map((c) => c.percent))
+  if (minPercent <= 0) {
+    return components.map((c) => ({
+      ...c,
+      drops: 1,
+      milliliters: round(dropMl, 3),
+      grams: round(dropMl * densityGPerMl, 3),
+    }))
+  }
+
+  let parts = components.map((c) => Math.max(1, Math.round(c.percent / minPercent)))
+  const divisor = parts.reduce((acc, n) => gcd(acc, n), parts[0] ?? 1)
+  parts = parts.map((n) => Math.max(1, Math.round(n / divisor)))
+
+  return components.map((c, i) => {
+    const drops = parts[i] ?? 1
+    const milliliters = round(drops * dropMl, 3)
+    return {
+      ...c,
+      drops,
+      milliliters,
+      grams: round(milliliters * densityGPerMl, 3),
+    }
+  })
+}
+
 export function buildTargetSnapshot(rgb: RGB) {
   return describeColor(rgb)
 }
