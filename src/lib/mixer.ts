@@ -36,22 +36,43 @@ function combinations<T>(items: T[], k: number): T[][] {
   return result
 }
 
-function rgbToCmy(rgb: RGB) {
-  return {
-    c: 1 - rgb.r / 255,
-    m: 1 - rgb.g / 255,
-    y: 1 - rgb.b / 255,
-  }
+function srgbToLinear(c: number): number {
+  const s = clamp(c / 255, 0, 1)
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
 }
 
-function cmyToRgb(cmy: { c: number; m: number; y: number }): RGB {
-  return {
-    r: clamp(Math.round((1 - cmy.c) * 255), 0, 255),
-    g: clamp(Math.round((1 - cmy.m) * 255), 0, 255),
-    b: clamp(Math.round((1 - cmy.y) * 255), 0, 255),
-  }
+function linearToSrgb(c: number): number {
+  const v = clamp(c, 0, 1)
+  const s = v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055
+  return clamp(Math.round(s * 255), 0, 255)
 }
 
+/** Kubelka–Munk K/S from linear reflectance. */
+function reflectanceToKS(r: number): number {
+  const R = clamp(r, 0.0015, 0.999)
+  return ((1 - R) * (1 - R)) / (2 * R)
+}
+
+function ksToReflectance(ks: number): number {
+  const value = ks + 1
+  const root = Math.sqrt(Math.max(0, value * value - 1))
+  return clamp(value - root, 0.0015, 0.999)
+}
+
+function chromaOf(rgb: RGB): number {
+  const lab = rgbToLab(rgb)
+  return Math.hypot(lab.a, lab.b)
+}
+
+function isNearNeutral(rgb: RGB): boolean {
+  return chromaOf(rgb) < 12
+}
+
+/**
+ * Predict mixed color.
+ * Acrylic mode uses a Kubelka–Munk-like reflectance blend (much closer to
+ * real paint than plain CMY averaging). Additive mode uses linear-light RGB.
+ */
 export function predictMixColor(
   paints: Paint[],
   weights: number[],
@@ -61,44 +82,35 @@ export function predictMixColor(
   const norms = weights.map((w) => w / total)
 
   if (mode === 'additive') {
-    return {
-      r: clamp(
-        Math.round(paints.reduce((s, p, i) => s + p.rgb.r * (norms[i] ?? 0), 0)),
-        0,
-        255,
-      ),
-      g: clamp(
-        Math.round(paints.reduce((s, p, i) => s + p.rgb.g * (norms[i] ?? 0), 0)),
-        0,
-        255,
-      ),
-      b: clamp(
-        Math.round(paints.reduce((s, p, i) => s + p.rgb.b * (norms[i] ?? 0), 0)),
-        0,
-        255,
-      ),
-    }
+    const r = paints.reduce((s, p, i) => s + srgbToLinear(p.rgb.r) * (norms[i] ?? 0), 0)
+    const g = paints.reduce((s, p, i) => s + srgbToLinear(p.rgb.g) * (norms[i] ?? 0), 0)
+    const b = paints.reduce((s, p, i) => s + srgbToLinear(p.rgb.b) * (norms[i] ?? 0), 0)
+    return { r: linearToSrgb(r), g: linearToSrgb(g), b: linearToSrgb(b) }
   }
 
-  // Acrylic / pigment-like subtractive approximation in CMY
-  const mixed = paints.reduce(
+  const ks = paints.reduce(
     (acc, paint, i) => {
       const w = norms[i] ?? 0
-      const cmy = rgbToCmy(paint.rgb)
       return {
-        c: acc.c + cmy.c * w,
-        m: acc.m + cmy.m * w,
-        y: acc.y + cmy.y * w,
+        r: acc.r + reflectanceToKS(srgbToLinear(paint.rgb.r)) * w,
+        g: acc.g + reflectanceToKS(srgbToLinear(paint.rgb.g)) * w,
+        b: acc.b + reflectanceToKS(srgbToLinear(paint.rgb.b)) * w,
       }
     },
-    { c: 0, m: 0, y: 0 },
+    { r: 0, g: 0, b: 0 },
   )
-  return cmyToRgb(mixed)
+
+  return {
+    r: linearToSrgb(ksToReflectance(ks.r)),
+    g: linearToSrgb(ksToReflectance(ks.g)),
+    b: linearToSrgb(ksToReflectance(ks.b)),
+  }
 }
 
 function scoreMix(
   predicted: RGB,
   targetLab: ReturnType<typeof rgbToLab>,
+  targetChroma: number,
   paints: Paint[],
   weights: number[],
   options: MixOptions,
@@ -106,17 +118,25 @@ function scoreMix(
   const predLab = rgbToLab(predicted)
   let score = deltaE2000(predLab, targetLab)
 
+  // Prefer chromatic paints when the target is colorful (avoid B/W-only traps)
+  if (targetChroma > 18) {
+    const neutralShare = paints.reduce((sum, p, i) => {
+      return sum + (isNearNeutral(p.rgb) ? (weights[i] ?? 0) : 0)
+    }, 0)
+    score += neutralShare * Math.min(8, targetChroma / 8)
+  }
+
   if (options.prioritizeOpaque) {
     const opaqueShare = paints.reduce((sum, p, i) => {
       return sum + (p.baseType === 'opaque' ? (weights[i] ?? 0) : 0)
     }, 0)
-    score -= opaqueShare * 0.15
+    score -= opaqueShare * 0.12
   }
   if (options.prioritizeTransparent) {
     const transparentShare = paints.reduce((sum, p, i) => {
       return sum + (p.baseType === 'transparent' ? (weights[i] ?? 0) : 0)
     }, 0)
-    score -= transparentShare * 0.15
+    score -= transparentShare * 0.12
   }
   return score
 }
@@ -127,10 +147,8 @@ function optimizeWeights(
   options: MixOptions,
 ): { weights: number[]; deltaE: number; predicted: RGB } {
   const targetLab = rgbToLab(targetRgb)
+  const targetChroma = Math.hypot(targetLab.a, targetLab.b)
   const n = paints.length
-  let bestWeights = Array.from({ length: n }, () => 1 / n)
-  let bestPredicted = predictMixColor(paints, bestWeights, options.mixingMode)
-  let bestScore = scoreMix(bestPredicted, targetLab, paints, bestWeights, options)
 
   if (n === 1) {
     const predicted = paints[0]!.rgb
@@ -141,10 +159,20 @@ function optimizeWeights(
     }
   }
 
-  // Coarse simplex-style / grid refinement
-  const steps = n <= 3 ? 11 : n === 4 ? 9 : 7
-  const coords: number[][] = []
+  let bestWeights = Array.from({ length: n }, () => 1 / n)
+  let bestPredicted = predictMixColor(paints, bestWeights, options.mixingMode)
+  let bestScore = scoreMix(
+    bestPredicted,
+    targetLab,
+    targetChroma,
+    paints,
+    bestWeights,
+    options,
+  )
 
+  // Finer simplex grid for small sets
+  const steps = n <= 2 ? 24 : n === 3 ? 16 : n === 4 ? 12 : 9
+  const coords: number[][] = []
   const recurse = (remaining: number, left: number, path: number[]) => {
     if (remaining === 1) {
       coords.push([...path, left])
@@ -159,10 +187,18 @@ function optimizeWeights(
   for (const c of coords) {
     const sum = c.reduce((a, b) => a + b, 0)
     if (sum === 0) continue
+    // Prefer recipes that actually use every selected paint a bit
+    if (c.some((v) => v === 0) && n > 2) continue
     const weights = c.map((v) => v / sum)
-    // Skip near-zero components for cleaner recipes when optional
     const predicted = predictMixColor(paints, weights, options.mixingMode)
-    const sc = scoreMix(predicted, targetLab, paints, weights, options)
+    const sc = scoreMix(
+      predicted,
+      targetLab,
+      targetChroma,
+      paints,
+      weights,
+      options,
+    )
     if (sc < bestScore) {
       bestScore = sc
       bestWeights = weights
@@ -170,19 +206,26 @@ function optimizeWeights(
     }
   }
 
-  // Local refinement around best (±5%)
-  for (let iter = 0; iter < 8; iter++) {
+  // Local coordinate descent on ΔE
+  for (let iter = 0; iter < 24; iter++) {
     let improved = false
     for (let i = 0; i < n; i++) {
-      for (const delta of [-0.04, -0.02, 0.02, 0.04]) {
+      for (const delta of [-0.08, -0.04, -0.02, -0.01, 0.01, 0.02, 0.04, 0.08]) {
         const next = [...bestWeights]
         next[i] = Math.max(0, (next[i] ?? 0) + delta)
         const total = next.reduce((a, b) => a + b, 0)
         if (total <= 0) continue
         const norms = next.map((w) => w / total)
         const predicted = predictMixColor(paints, norms, options.mixingMode)
-        const sc = scoreMix(predicted, targetLab, paints, norms, options)
-        if (sc < bestScore - 0.001) {
+        const sc = scoreMix(
+          predicted,
+          targetLab,
+          targetChroma,
+          paints,
+          norms,
+          options,
+        )
+        if (sc < bestScore - 0.0005) {
           bestScore = sc
           bestWeights = norms
           bestPredicted = predicted
@@ -233,6 +276,91 @@ function toComponents(
     .sort((a, b) => b.percent - a.percent)
 }
 
+/** Build a smarter candidate pool than "nearest RGB only". */
+function selectCandidatePaints(
+  available: Paint[],
+  locked: Paint[],
+  targetRgb: RGB,
+): Paint[] {
+  const targetLab = rgbToLab(targetRgb)
+  const targetChroma = Math.hypot(targetLab.a, targetLab.b)
+  const free = available.filter((p) => !locked.some((l) => l.id === p.id))
+
+  const byDeltaE = [...free]
+    .map((p) => ({
+      paint: p,
+      d: deltaE2000(p.lab ?? rgbToLab(p.rgb), targetLab),
+      chroma: chromaOf(p.rgb),
+    }))
+    .sort((a, b) => a.d - b.d)
+
+  const nearest = byDeltaE.slice(0, 10).map((x) => x.paint)
+
+  // Chromatic helpers toward target hue (critical vs Golden-style mixers)
+  const chromatic = byDeltaE
+    .filter((x) => x.chroma > 18)
+    .slice(0, 8)
+    .map((x) => x.paint)
+
+  // Axis helpers: closest on L*, a*, b* independently
+  const byL = [...free].sort(
+    (a, b) =>
+      Math.abs((a.lab ?? rgbToLab(a.rgb)).l - targetLab.l) -
+      Math.abs((b.lab ?? rgbToLab(b.rgb)).l - targetLab.l),
+  )
+  const byA = [...free].sort(
+    (a, b) =>
+      Math.abs((a.lab ?? rgbToLab(a.rgb)).a - targetLab.a) -
+      Math.abs((b.lab ?? rgbToLab(b.rgb)).a - targetLab.a),
+  )
+  const byB = [...free].sort(
+    (a, b) =>
+      Math.abs((a.lab ?? rgbToLab(a.rgb)).b - targetLab.b) -
+      Math.abs((b.lab ?? rgbToLab(b.rgb)).b - targetLab.b),
+  )
+
+  const axisHelpers = [byL[0], byA[0], byB[0], byL[1], byA[1], byB[1]].filter(
+    (p): p is Paint => Boolean(p),
+  )
+
+  // Keep a white/black only if target is low chroma or needs value control
+  const neutrals = free.filter((p) => isNearNeutral(p.rgb))
+  const white = neutrals
+    .filter((p) => p.rgb.r + p.rgb.g + p.rgb.b > 540)
+    .sort((a, b) => b.rgb.r + b.rgb.g + b.rgb.b - (a.rgb.r + a.rgb.g + a.rgb.b))[0]
+  const black = neutrals
+    .filter((p) => p.rgb.r + p.rgb.g + p.rgb.b < 120)
+    .sort((a, b) => a.rgb.r + a.rgb.g + a.rgb.b - (b.rgb.r + b.rgb.g + b.rgb.b))[0]
+
+  const picked = new Map<string, Paint>()
+  for (const p of [
+    ...locked,
+    ...nearest,
+    ...chromatic,
+    ...axisHelpers,
+    ...(targetChroma < 25 || targetLab.l > 70 ? (white ? [white] : []) : []),
+    ...(targetChroma < 25 || targetLab.l < 35 ? (black ? [black] : []) : []),
+    // Always allow one white for tinting if present
+    ...(white ? [white] : []),
+  ]) {
+    picked.set(p.id, p)
+  }
+
+  // Cap pool size for combinatorics, prioritizing chromatic when target is rich
+  const list = [...picked.values()]
+  if (list.length <= 14) return list
+
+  return list
+    .map((p) => {
+      const d = deltaE2000(p.lab ?? rgbToLab(p.rgb), targetLab)
+      const chromaBonus = targetChroma > 18 && !isNearNeutral(p.rgb) ? -4 : 0
+      return { p, rank: d + chromaBonus }
+    })
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 14)
+    .map((x) => x.p)
+}
+
 export function findBestMix(
   targetRgb: RGB,
   palettePaints: Paint[],
@@ -242,26 +370,13 @@ export function findBestMix(
     options.lockedPaintIds.includes(p.id),
   )
   const available = palettePaints.filter(
-    (p) =>
-      !options.excludedPaintIds.includes(p.id) &&
-      (options.lockedPaintIds.length === 0 ||
-        options.lockedPaintIds.includes(p.id) ||
-        !options.lockedPaintIds.includes(p.id)),
+    (p) => !options.excludedPaintIds.includes(p.id),
   )
 
-  // Candidate pool: locked paints must be included; others ranked by ΔE
-  const targetLab = rgbToLab(targetRgb)
-  const free = available
-    .filter((p) => !options.lockedPaintIds.includes(p.id))
-    .map((p) => ({
-      paint: p,
-      d: deltaE2000(p.lab ?? rgbToLab(p.rgb), targetLab),
-    }))
-    .sort((a, b) => a.d - b.d)
-    .slice(0, 12)
-    .map((x) => x.paint)
-
-  const pool = [...locked, ...free.filter((p) => !locked.some((l) => l.id === p.id))]
+  const freePool = selectCandidatePaints(available, locked, targetRgb).filter(
+    (p) => !locked.some((l) => l.id === p.id),
+  )
+  const pool = [...locked, ...freePool]
   if (pool.length === 0) return null
 
   let best: {
@@ -278,18 +393,13 @@ export function findBestMix(
     const freeSlots = size - locked.length
     if (freeSlots < 0) continue
     const freeCombos =
-      freeSlots === 0
-        ? [[]]
-        : combinations(
-            free.filter((p) => !locked.some((l) => l.id === p.id)),
-            freeSlots,
-          )
+      freeSlots === 0 ? [[]] : combinations(freePool, freeSlots)
 
     for (const combo of freeCombos) {
       const paints = [...locked, ...combo]
       if (paints.length === 0) continue
       const optimized = optimizeWeights(paints, targetRgb, options)
-      if (!best || optimized.deltaE < best.deltaE) {
+      if (!best || optimized.deltaE < best.deltaE - 0.01) {
         best = {
           paints,
           weights: optimized.weights,

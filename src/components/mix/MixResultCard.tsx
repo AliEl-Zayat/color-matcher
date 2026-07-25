@@ -64,6 +64,15 @@ export function MixResultCard({
             </Badge>
           </div>
 
+          {result.matchPercent < 45 ? (
+            <p className="rounded-2xl border border-[var(--color-accent-2)]/25 bg-[var(--color-accent-2)]/10 px-3 py-2 text-xs leading-relaxed text-[var(--color-foreground)]">
+              Low match usually means this palette is missing pigments near the
+              target. Brand tools like Golden use factory color data for their
+              full line. Add the closest Golden (or other) hues into this
+              palette from a swatch/HEX, set Max paints to 5, then recompute.
+            </p>
+          ) : null}
+
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-2 text-center">
               <ColorSwatch hex={targetHex} size="xl" className="mx-auto" />
