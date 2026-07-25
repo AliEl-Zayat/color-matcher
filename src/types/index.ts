@@ -3,6 +3,8 @@ export type PaintBaseType = 'opaque' | 'transparent'
 export type PaintType =
   | 'automotive_2k'
   | 'automotive_basecoat'
+  | 'glc_automotive_pigments'
+  | 'glc_inks'
   | 'acrylic_airbrush'
   | 'acrylic_brush'
   | 'lacquer'
@@ -162,6 +164,8 @@ export interface MixResult {
 export const PAINT_TYPE_LABELS: Record<PaintType, string> = {
   automotive_2k: 'Automotive 2K',
   automotive_basecoat: 'Automotive Basecoat',
+  glc_automotive_pigments: 'GLC Automotive Pigments',
+  glc_inks: 'GLC Inks',
   acrylic_airbrush: 'Acrylic Airbrush',
   acrylic_brush: 'Acrylic Brush Paints',
   lacquer: 'Lacquer Paints',

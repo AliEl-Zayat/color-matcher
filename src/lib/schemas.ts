@@ -24,6 +24,8 @@ export const paletteFormSchema = z.object({
   paintType: z.enum([
     'automotive_2k',
     'automotive_basecoat',
+    'glc_automotive_pigments',
+    'glc_inks',
     'acrylic_airbrush',
     'acrylic_brush',
     'lacquer',
