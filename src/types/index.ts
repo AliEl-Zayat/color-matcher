@@ -7,6 +7,7 @@ export type PaintType =
   | 'glc_inks'
   | 'acrylic_airbrush'
   | 'acrylic_brush'
+  | 'pop_art'
   | 'lacquer'
   | 'oil'
   | 'watercolor'
@@ -168,9 +169,25 @@ export const PAINT_TYPE_LABELS: Record<PaintType, string> = {
   glc_inks: 'GLC Inks',
   acrylic_airbrush: 'Acrylic Airbrush',
   acrylic_brush: 'Acrylic Brush Paints',
+  pop_art: 'Pop Art',
   lacquer: 'Lacquer Paints',
   oil: 'Oil Paints',
   watercolor: 'Watercolors',
   model_color: 'Model Color',
   custom: 'Custom Palette',
 }
+
+/** Kits that ship with a starter palette (everything except freeform custom). */
+export const STARTER_KIT_TYPES: PaintType[] = [
+  'automotive_2k',
+  'automotive_basecoat',
+  'glc_automotive_pigments',
+  'glc_inks',
+  'acrylic_airbrush',
+  'acrylic_brush',
+  'pop_art',
+  'lacquer',
+  'oil',
+  'watercolor',
+  'model_color',
+]

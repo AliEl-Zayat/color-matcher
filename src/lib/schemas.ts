@@ -28,6 +28,7 @@ export const paletteFormSchema = z.object({
     'glc_inks',
     'acrylic_airbrush',
     'acrylic_brush',
+    'pop_art',
     'lacquer',
     'oil',
     'watercolor',

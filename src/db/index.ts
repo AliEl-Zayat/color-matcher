@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { AppSettings, MixRecipe, Paint, Palette, Project } from '@/types'
-import { ensureGlcPalettes, seedDatabase } from '@/db/seed'
+import { ensureAllKitPalettes, seedDatabase } from '@/db/seed'
 
 export class PaintMatchDB extends Dexie {
   palettes!: Table<Palette, string>
@@ -32,7 +32,7 @@ export async function ensureDbReady(): Promise<void> {
       if (count === 0) {
         await seedDatabase(db)
       } else {
-        await ensureGlcPalettes(db)
+        await ensureAllKitPalettes(db)
       }
       const settings = await db.settings.get('settings')
       if (!settings) {
